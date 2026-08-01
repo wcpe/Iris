@@ -1,5 +1,6 @@
-import org.ajoberstar.grgit.Grgit
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
+import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.jvm.tasks.Jar
 
 object Constants {
     // https://fabricmc.net/develop/
@@ -8,7 +9,8 @@ object Constants {
     const val FABRIC_API_VERSION: String = "0.92.0+1.20.1"
 
     // https://semver.org/
-    const val MOD_VERSION: String = "1.7.2"
+    const val UPSTREAM_VERSION: String = "1.7.2"
+    const val WCPE_VERSION_SUFFIX: String = "wcpe.1"
 
     const val CUSTOM_SODIUM: Boolean = false
     const val CUSTOM_SODIUM_NAME: String = ""
@@ -42,8 +44,8 @@ plugins {
     // is not reachable for some reason, and it makes builds much more reproducible. Observation also shows that it
     // really helps to improve startup times on slow connections.
     id("fabric-loom") version "1.5.7"
-    id("org.ajoberstar.grgit") version "5.2.2"
     id("com.github.gmazzo.buildconfig") version "5.3.5"
+    `maven-publish`
 }
 
 base {
@@ -228,34 +230,42 @@ tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
 }
 
+val namedDevJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("named-dev")
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+
+    from(sourceSets.getByName("main").output.classesDirs)
+    from(sourceSets.getByName("sodiumCompatibility").output.classesDirs)
+    from(sourceSets.getByName("vendored").output.classesDirs)
+    from(sourceSets.getByName("desktop").output.classesDirs)
+    from("${rootProject.projectDir}/LICENSE")
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("irisNamedDev") {
+            groupId = "net.irisshaders"
+            artifactId = "iris"
+            version = project.version.toString()
+            artifact(namedDevJar)
+        }
+    }
+    repositories {
+        maven {
+            name = "wcpeReleases"
+            url = uri("https://maven.wcpe.top/repository/maven-releases/")
+            credentials {
+                username = providers.gradleProperty("wcpeMavenUsername")
+                    .orElse(providers.environmentVariable("WCPE_MAVEN_USERNAME"))
+                    .orNull
+                password = providers.gradleProperty("wcpeMavenPassword")
+                    .orElse(providers.environmentVariable("WCPE_MAVEN_PASSWORD"))
+                    .orNull
+            }
+        }
+    }
+}
+
 fun createVersionString(): String {
-    val builder = StringBuilder()
-
-    val isReleaseBuild = System.getProperty("build.release") != null
-    val buildId = System.getenv("GITHUB_RUN_NUMBER")
-
-    if (isReleaseBuild) {
-        builder.append(Constants.MOD_VERSION)
-    } else {
-        builder.append(Constants.MOD_VERSION.substringBefore('-'))
-        builder.append("-snapshot")
-    }
-
-    builder.append("+mc").append(Constants.MINECRAFT_VERSION)
-
-    if (!isReleaseBuild) {
-        val open = Grgit.open {
-            dir = rootDir
-        }
-
-        if (buildId != null) {
-            builder.append("-build.${buildId}")
-        } else if (open == null) {
-            builder.append("-local")
-        } else {
-            builder.append("-" + open.head().abbreviatedId + (if (!open.status().isClean) "-dirty" else ""))
-        }
-    }
-
-    return builder.toString()
+    return "${Constants.UPSTREAM_VERSION}+mc${Constants.MINECRAFT_VERSION}-${Constants.WCPE_VERSION_SUFFIX}"
 }
