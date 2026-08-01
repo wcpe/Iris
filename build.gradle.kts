@@ -256,9 +256,11 @@ publishing {
             url = uri("https://maven.wcpe.top/repository/maven-releases/")
             credentials {
                 username = providers.gradleProperty("wcpeMavenUsername")
+                    .orElse(providers.gradleProperty("username"))
                     .orElse(providers.environmentVariable("WCPE_MAVEN_USERNAME"))
                     .orNull
                 password = providers.gradleProperty("wcpeMavenPassword")
+                    .orElse(providers.gradleProperty("password"))
                     .orElse(providers.environmentVariable("WCPE_MAVEN_PASSWORD"))
                     .orNull
             }
